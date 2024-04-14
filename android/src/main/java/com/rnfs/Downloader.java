@@ -6,6 +6,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
 import java.net.HttpURLConnection;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -14,6 +16,13 @@ import android.util.Log;
 import android.os.AsyncTask;
 
 import com.facebook.react.bridge.ReadableMapKeySetIterator;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 public class Downloader extends AsyncTask<DownloadParams, long[], DownloadResult> {
   private DownloadParams mParam;
@@ -45,7 +54,15 @@ public class Downloader extends AsyncTask<DownloadParams, long[], DownloadResult
     HttpURLConnection connection = null;
 
     try {
-      connection = (HttpURLConnection)param.src.openConnection();
+       if (param.src.getProtocol().toUpperCase().equals("HTTPS")) {
+        trustAllHosts();
+        HttpsURLConnection https = (HttpsURLConnection) param.src
+            .openConnection();
+        https.setHostnameVerifier(DO_NOT_VERIFY);
+        connection = https;
+      } else {
+        connection = (HttpURLConnection)param.src.openConnection();
+      }
 
       ReadableMapKeySetIterator iterator = param.headers.keySetIterator();
 
@@ -173,4 +190,37 @@ public class Downloader extends AsyncTask<DownloadParams, long[], DownloadResult
   protected void onPostExecute(Exception ex) {
 
   }
+  public static void trustAllHosts() {
+    // Create a trust manager that does not validate certificate chains
+    // Android use X509 cert
+    TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
+      public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+        return new java.security.cert.X509Certificate[] {};
+      }
+
+      public void checkClientTrusted(X509Certificate[] chain,
+          String authType) throws CertificateException {
+      }
+
+      public void checkServerTrusted(X509Certificate[] chain,
+          String authType) throws CertificateException {
+      }
+    } };
+
+    // Install the all-trusting trust manager
+    try {
+      SSLContext sc = SSLContext.getInstance("TLS");
+      sc.init(null, trustAllCerts, new java.security.SecureRandom());
+      HttpsURLConnection
+          .setDefaultSSLSocketFactory(sc.getSocketFactory());
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+
+  public final static HostnameVerifier DO_NOT_VERIFY = new HostnameVerifier() {
+    public boolean verify(String hostname, SSLSession session) {
+      return true;
+    }
+  };
 }
